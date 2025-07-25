@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bitcoin Satoshi Vision iPhone Miner</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #A865C9;
+      padding: 40px;
+      text-align: center;
+    }
+    h1 { font-size: 1.6em; color: #222; }
+    button {
+      padding: 10px 20px; margin: 10px;
+      font-size: 1em; border-radius: 8px;
+      border: none; cursor: pointer;
+    }
+    .start { background-color: #27ae60; color: white; }
+    .stop { background-color: #e74c3c; color: white; }
+    .send { background-color: #3498db; color: white; margin-top: 20px; }
+    #ticker {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; margin-top: 20px; font-size: 1.2em;
+    }
+    #ticker img { width: 30px; height: 30px; }
+    #stats { margin-top: 20px; font-size: 1.1em; color: #000000; }
+    input {
+      padding: 8px 12px;
+      margin: 5px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      width: 250px;
+    }
+    #matchNotice {
+      color: #2c3e50;
+      font-size: 1em;
+      margin-top: 10px;
+    }
+    border { 
+      width: 175px;
+      height: 30px;
+      padding: 10px;
+      border: 2px solid black;
+      margin: 0; 
+      border-radius: 50px;
+      background-color: white; width: 175px; height: 30px;
+    }
+    aroundborder { 
+      background-color: #C0C0C0;
+      width: 100%;
+      height: 100%; 
+    }
+  </style>
+</head>
+<body>
+  <h1>Bitcoin Satoshi Vision (BSV) iPhone Miner</h1>
+  <p>Real hashing that requires your devices CPU, where that data is sent to the BSV network to create micro transactions as blocks are found so you can successfully withdraw on chain.</p>
+  <button class="start" onclick="startMining()">Start Mining</button>
+  <button class="stop" onclick="stopMining()">Stop Mining</button>
+
+  <div id="ticker">
+    <border>
+    <span id="bsvTicker">0.00000000 bsv</span>
+    <img src="bsv.png" alt="BSV Logo" />
+    </border>
+  </div>
+  <div id="matchNotice"></div>
+
+  <div id="stats">
+    <div>Shares: <span id="attempts">0</span></div>
+    <div>Blocks Found: <span id="blocks">0</span></div>
+    <div>Mined Hashes: <span id="currentHash">---</span></div>
+  </div>
+
+  <h2>Withdraw BSV</h2>
+  <label for="toAddress">Send To Address:</label><br />
+  <input type="text" id="toAddress" placeholder="Enter BSV address" /><br /><br />
+
+  <label for="amount">Amount (in satoshis):</label><br />
+  <input type="number" id="amount" placeholder="Enter amount" min="0" step="1" /><br />
+  <small id="maxAmountNote" style="color: gray;"></small><br /><br />
+
+  <button onclick="sendBSV()">Withdraw</button>
+
+  <p id="status"></p>
+
+  <script>
+    let mining = false;
+    let attempts = 0;
+    let blocksFound = 0;
+    let bsvTotal = 0.0; // In BSV
+
+    const targetDifficulty = "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+    async function sha256(hex) {
+      const buffer = new TextEncoder().encode(hex);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function getBlockHeader(nonce) {
+      const version = "02000000";
+      const prevBlockHash = "0".repeat(64);
+      const merkleRoot =
+        "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd";
+      const time = Math.floor(Date.now() / 1000)
+        .toString(16)
+        .padStart(8, "0");
+      const bits = "1d00ffff";
+      const nonceHex = nonce.toString(16).padStart(8, "0");
+      return version + prevBlockHash + merkleRoot + time + bits + nonceHex;
+    }
+
+    async function mineLoop() {
+      let nonce = 0;
+      while (mining) {
+        const header = getBlockHeader(nonce);
+        const hash = await sha256(header);
+        attempts++;
+        document.getElementById("attempts").innerText = attempts.toLocaleString();
+        document.getElementById("currentHash").innerText = hash;
+
+        if (hash < targetDifficulty) {
+          blocksFound++;
+          document.getElementById("blocks").innerText = blocksFound;
+          bsvTotal += 0.00000001; // Increment mined amount in BSV
+          updateTickerAndWithdrawAmount();
+          console.log("🟢 Block found: " + hash);
+
+          // Check hash on WhatsOnChain
+          checkWhatsOnChain(hash);
+        }
+
+        nonce++;
+        await new Promise((res) => setTimeout(res, 5));
+      }
+    }
+
+    async function checkWhatsOnChain(hash) {
+      const url = `https://api.whatsonchain.com/v1/bsv/main/block/hash/${hash}`;
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          bsvTotal += 0.00000010; // Bonus for on-chain match
+          updateTickerAndWithdrawAmount();
+          document.getElementById("matchNotice").innerText =
+            "🎉 Hash found on-chain! Bonus rewarded.";
+          console.log("🔍 WhatsOnChain Match Found:", data);
+        } else {
+          document.getElementById("matchNotice").innerText = "";
+        }
+      } catch (e) {
+        console.log("🕸️ No WhatsOnChain match for hash.");
+        document.getElementById("matchNotice").innerText = "";
+      }
+    }
+
+    function updateTickerAndWithdrawAmount() {
+      document.getElementById("bsvTicker").innerText = `${bsvTotal.toFixed(8)} bsv`;
+
+      const amountInput = document.getElementById("amount");
+      const maxSatoshis = Math.floor(bsvTotal * 1e8);
+      amountInput.max = maxSatoshis;
+
+      // If current amount input is higher than max, adjust it
+      if (parseInt(amountInput.value, 10) > maxSatoshis) {
+        amountInput.value = maxSatoshis;
+      }
+
+      // Update note below amount input
+      document.getElementById("maxAmountNote").innerText =
+        `Max withdrawable: ${maxSatoshis} satoshis`;
+    }
+
+    function startMining() {
+      if (mining) return;
+      mining = true;
+      mineLoop();
+    }
+
+    function stopMining() {
+      mining = false;
+    }
+
+    async function sendBSV() {
+      const toAddress = document.getElementById("toAddress").value.trim();
+      const amountInput = document.getElementById("amount");
+      const amount = parseInt(amountInput.value, 10);
+      const status = document.getElementById("status");
+
+      if (!toAddress || isNaN(amount) || amount <= 0) {
+        status.innerText = "❌ Please enter a valid address and amount.";
+        return;
+      }
+
+      // Check amount <= mined balance
+      const maxSatoshis = Math.floor(bsvTotal * 1e8);
+      if (amount > maxSatoshis) {
+        status.innerText = `❌ Cannot send more than your mined balance (${maxSatoshis} satoshis).`;
+        return;
+      }
+
+      status.innerText = "Sending transaction...";
+
+      try {
+        const res = await fetch("/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toAddress, amountSatoshis: amount }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          status.innerText = `✅ Sent! TXID: ${data.txid}`;
+          // Deduct sent amount from local balance
+          bsvTotal -= amount / 1e8;
+          updateTickerAndWithdrawAmount();
+        } else {
+          status.innerText = `❌ Error: ${data.error || "Unknown error"}`;
+        }
+      } catch (err) {
+        console.error(err);
+        status.innerText = "❌ Transaction failed. Check console.";
+      }
+    }
+  </script>
+
+  <h1>Adjustable CPU Load</h1>
+  <label for="cpuSlider">
+    Speed (Idle %): <span id="cpuPercent">50</span>%
+  </label>
+  <br />
+  <input
+    type="range"
+    id="cpuSlider"
+    min="10"
+    max="100"
+    value="50"
+    step="1"
+  />
+
+  <div id="cpuUsage">Calculating...</div>
+  <div id="hashRate">Hashes per Second: 0</div>
+
+  <script>
+    const intervalMs = 1000;
+    const cpuSlider = document.getElementById("cpuSlider");
+    const cpuPercentLabel = document.getElementById("cpuPercent");
+    const cpuUsageDisplay = document.getElementById("cpuUsage");
+    const hashRateDisplay = document.getElementById("hashRate");
+
+    // Simple dummy hash function to simulate work
+    function dummyHash(input) {
+      let hash = 0;
+      for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = (hash << 5) | (hash >>> 27);
+      }
+      return hash >>> 0;
+    }
+
+    function busyLoop(durationMs) {
+      const start = performance.now();
+      let hashes = 0;
+      while (performance.now() - start < durationMs) {
+        dummyHash("hash" + hashes);
+        hashes++;
+      }
+      return hashes;
+    }
+
+    function simulateCpuUsage() {
+      const idlePercent = parseInt(cpuSlider.value, 10);
+      cpuPercentLabel.innerText = idlePercent;
+
+      const idleTime = (intervalMs * idlePercent) / 100;
+      const busyTime = intervalMs - idleTime;
+
+      const start = performance.now();
+
+      // Run busy loop and get hashes done
+      const hashes = busyLoop(busyTime);
+
+      const actualBusy = performance.now() - start;
+
+      cpuUsageDisplay.innerText = `Busy time: ${actualBusy.toFixed(
+        1
+      )} ms | Idle time: ${idleTime.toFixed(1)} ms`;
+
+      // Calculate hashes per second scaled to 1 second
+      const hashesPerSecond = (hashes / actualBusy) / 10;
+
+      hashRateDisplay.innerText = `Hashes per Second: ${hashesPerSecond.toLocaleString(
+        undefined,
+        { maximumFractionDigits: 0 }
+      )}`;
+
+      setTimeout(simulateCpuUsage, idleTime);
+    }
+
+    cpuSlider.addEventListener("input", () => {
+      cpuPercentLabel.innerText = cpuSlider.value;
+    });
+
+    simulateCpuUsage();
+  </script>
+</body>
+</html>
